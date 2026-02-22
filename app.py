@@ -120,14 +120,28 @@ def crop_image_modal(image_obj, key_prefix):
     Shows the image cropper in a modal window.
     """
     st.write("Use the tools below to crop your image.")
+    
+    # Scale down the image for the modal UI so it fits on screen
+    max_display_dim = 600
+    w, h = image_obj.size
+    
+    display_img = image_obj.copy()
+    if w > max_display_dim or h > max_display_dim:
+        display_img.thumbnail((max_display_dim, max_display_dim))
+    
+    disp_w, disp_h = display_img.size
+    # Calculate scale factor to map coordinates back to full image
+    scale_x = w / disp_w if disp_w > 0 else 1.0
+    scale_y = h / disp_h if disp_h > 0 else 1.0
+
     # Initialize the specific session state variable for this cropper
     box_key = f"{key_prefix}_crop_box"
     if box_key not in st.session_state:
          st.session_state[box_key] = None
 
-    # We use return_type="box" to get the coordinates
+    # We use return_type="box" to get the coordinates of the *scaled* image
     crop_box = st_cropper(
-         image_obj, 
+         display_img, 
          realtime_update=True, 
          box_color='#00FF00' if key_prefix == 'bg' else '#FF0000', 
          key=f"{key_prefix}_cropper_widget",
@@ -136,8 +150,18 @@ def crop_image_modal(image_obj, key_prefix):
     )
     
     if st.button("Save Crop", use_container_width=True):
-         # Save coordinates to session state and trigger rerun to close modal
-         st.session_state[box_key] = crop_box
+         if crop_box:
+             # Map the coordinates back from the scaled display image to the original image size
+             mapped_box = {
+                 'left': int(crop_box['left'] * scale_x),
+                 'top': int(crop_box['top'] * scale_y),
+                 'width': int(crop_box['width'] * scale_x),
+                 'height': int(crop_box['height'] * scale_y)
+             }
+             st.session_state[box_key] = mapped_box
+         else:
+             st.session_state[box_key] = crop_box
+         
          st.rerun()
 
 def main():
