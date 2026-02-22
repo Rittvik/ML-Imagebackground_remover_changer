@@ -114,12 +114,28 @@ def process_image(image, background_image=None, background_color=None, scale=1.0
 
     return Image.fromarray(output_image)
 
-@st.dialog("Crop Image")
+@st.dialog("Crop Image", width="large")
 def crop_image_modal(image_obj, key_prefix):
     """
     Shows the image cropper in a modal window.
     """
     st.write("Use the tools below to crop your image.")
+    
+    # Inject CSS to force the cropper to stay within the limits of the dialog box
+    st.markdown(
+        """
+        <style>
+        [data-testid="stFrame"] iframe {
+            max-width: 100%;
+        }
+        .stImageCropper {
+            max-width: 100%;
+            height: auto;
+        }
+        </style>
+        """, 
+        unsafe_allow_html=True
+    )
     
     # Scale down the image for the modal UI so it fits on screen
     max_display_dim = 600
