@@ -99,7 +99,24 @@ def main():
     bg_image_file = None
 
     if bg_mode == "Solid Color":
-        bg_color = st.sidebar.color_picker("Pick a Color", "#00FF00")
+        color_choice = st.sidebar.selectbox(
+            "Choose a Background Color", 
+            ["Green", "Blue", "Red", "Black", "White", "Yellow", "Cyan", "Magenta", "Custom"]
+        )
+        if color_choice == "Custom":
+            bg_color = st.sidebar.color_picker("Pick a Custom Color", "#00FF00")
+        else:
+            color_map = {
+                "Green": "#00FF00",
+                "Blue": "#0000FF",
+                "Red": "#FF0000",
+                "Black": "#000000",
+                "White": "#FFFFFF",
+                "Yellow": "#FFFF00",
+                "Cyan": "#00FFFF",
+                "Magenta": "#FF00FF"
+            }
+            bg_color = color_map[color_choice]
     else:
         bg_image_file = st.sidebar.file_uploader("Upload Background Image", type=["png", "jpg", "jpeg"])
 
