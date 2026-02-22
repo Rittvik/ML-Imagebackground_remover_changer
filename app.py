@@ -6,6 +6,7 @@ from mediapipe.tasks.python import vision
 import numpy as np
 from PIL import Image
 import os
+from streamlit_cropper import st_cropper
 
 # Initialize MediaPipe Image Segmenter
 # cache the segmenter to avoid reloading model on every run?
@@ -19,7 +20,7 @@ def get_segmenter():
                                            output_category_mask=True)
     return vision.ImageSegmenter.create_from_options(options)
 
-def process_image(image, background_image=None, background_color=None):
+def process_image(image, background_image=None, background_color=None, scale=1.0, x_offset=0, y_offset=0):
     """
     Processes the input image to replace the background.
     """
@@ -58,30 +59,58 @@ def process_image(image, background_image=None, background_color=None):
     # Prepare Foreground
     foreground = img_rgb
 
-    # Prepare Background
-    h, w, _ = foreground.shape
-    
+    # Determine canvas dimensions and background
     if background_image:
-        # Resize custom background to match foreground
-        bg_img = background_image.resize((w, h))
-        background = np.array(bg_img)
-        # Ensure background is RGB
-        if background.shape[-1] == 4:
-            background = cv2.cvtColor(background, cv2.COLOR_RGBA2RGB)
-    elif background_color:
-        # Create solid color background
-        # background_color is expected to be a hex string like '#RRGGBB'
-        hex_color = background_color.lstrip('#')
-        r, g, b = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
-        background = np.zeros_like(foreground)
-        background[:] = (r, g, b)
+        bg_img = background_image
+        bg_img.thumbnail((max_dim, max_dim)) # avoid huge backgrounds
+        out_w, out_h = bg_img.size
+        background = np.array(bg_img.convert('RGB'))
     else:
-        # Default to black
-        background = np.zeros_like(foreground)
+        out_h, out_w, _ = foreground.shape
+        background = np.zeros((out_h, out_w, 3), dtype=np.uint8)
+        if background_color:
+            hex_color = background_color.lstrip('#')
+            r, g, b = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+            background[:] = (r, g, b)
 
+    # Resize foreground based on scale
+    new_w = int(foreground.shape[1] * scale)
+    new_h = int(foreground.shape[0] * scale)
+    if new_w <= 0 or new_h <= 0:
+        return Image.fromarray(background)
+        
+    scaled_fg = cv2.resize(foreground, (new_w, new_h))
+    scaled_mask = cv2.resize(mask_3d, (new_w, new_h))
+    
     # Blend images
-    # Output = Foreground * Mask + Background * (1 - Mask)
-    output_image = (foreground * mask_3d + background * (1 - mask_3d)).astype(np.uint8)
+    output_image = background.copy()
+    
+    # Calculate bounding box on the background
+    y1 = y_offset
+    y2 = y_offset + new_h
+    x1 = x_offset
+    x2 = x_offset + new_w
+    
+    # Clip to background bounds
+    bg_y1 = max(0, y1)
+    bg_y2 = min(out_h, y2)
+    bg_x1 = max(0, x1)
+    bg_x2 = min(out_w, x2)
+    
+    # Calculate corresponding bounding box on the foreground
+    fg_y1 = bg_y1 - y1
+    fg_y2 = new_h - (y2 - bg_y2)
+    fg_x1 = bg_x1 - x1
+    fg_x2 = new_w - (x2 - bg_x2)
+    
+    if bg_y1 < bg_y2 and bg_x1 < bg_x2:
+        target_bg = output_image[bg_y1:bg_y2, bg_x1:bg_x2]
+        target_fg = scaled_fg[fg_y1:fg_y2, fg_x1:fg_x2]
+        target_mask = scaled_mask[fg_y1:fg_y2, fg_x1:fg_x2]
+        
+        output_image[bg_y1:bg_y2, bg_x1:bg_x2] = (
+            target_fg * target_mask + target_bg * (1 - target_mask)
+        ).astype(np.uint8)
 
     return Image.fromarray(output_image)
 
@@ -120,21 +149,31 @@ def main():
     else:
         bg_image_file = st.sidebar.file_uploader("Upload Background Image", type=["png", "jpg", "jpeg"])
 
+    bg_image = None
+    if bg_mode == "Custom Image" and bg_image_file is not None:
+        raw_bg = Image.open(bg_image_file).convert('RGB')
+        with st.sidebar.expander("Crop Background", expanded=False):
+            bg_image = st_cropper(raw_bg, realtime_update=True, box_color='#00FF00', key="bg_cropper")
+
     # Main Area
     uploaded_file = st.file_uploader("Upload Foreground Image", type=["png", "jpg", "jpeg"])
 
     if uploaded_file is not None:
-        image = Image.open(uploaded_file).convert('RGB')
+        raw_image = Image.open(uploaded_file).convert('RGB')
         
-        bg_image = None
-        if bg_image_file:
-            bg_image = Image.open(bg_image_file).convert('RGB')
+        with st.expander("Crop Foreground", expanded=False):
+            image = st_cropper(raw_image, realtime_update=True, box_color='#FF0000', key="fg_cropper")
+
+        st.sidebar.header("Foreground Adjustments")
+        fg_scale = st.sidebar.slider("Foreground Scale", min_value=0.1, max_value=5.0, value=1.0, step=0.1)
+        fg_x_offset = st.sidebar.slider("X Offset", min_value=-2000, max_value=2000, value=0, step=10)
+        fg_y_offset = st.sidebar.slider("Y Offset", min_value=-2000, max_value=2000, value=0, step=10)
 
         # Columns for side-by-side view
         col1, col2 = st.columns(2)
         
         with col1:
-            st.subheader("Original")
+            st.subheader("Original (Cropped)")
             st.image(image, use_column_width=True)
 
         # Process
@@ -144,7 +183,14 @@ def main():
                 if not os.path.exists('selfie_segmenter.tflite'):
                      st.error("Model file 'selfie_segmenter.tflite' not found. Please download it.")
                 else:
-                    result = process_image(image, background_image=bg_image, background_color=bg_color)
+                    result = process_image(
+                        image, 
+                        background_image=bg_image, 
+                        background_color=bg_color,
+                        scale=fg_scale,
+                        x_offset=fg_x_offset,
+                        y_offset=fg_y_offset
+                    )
                     
                     with col2:
                         st.subheader("Result")

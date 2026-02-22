@@ -3,3 +3,4 @@ mediapipe
 opencv-python-headless
 numpy
 Pillow
+streamlit-cropper
