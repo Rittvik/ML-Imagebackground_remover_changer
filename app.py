@@ -114,6 +114,32 @@ def process_image(image, background_image=None, background_color=None, scale=1.0
 
     return Image.fromarray(output_image)
 
+@st.dialog("Crop Image")
+def crop_image_modal(image_obj, key_prefix):
+    """
+    Shows the image cropper in a modal window.
+    """
+    st.write("Use the tools below to crop your image.")
+    # Initialize the specific session state variable for this cropper
+    box_key = f"{key_prefix}_crop_box"
+    if box_key not in st.session_state:
+         st.session_state[box_key] = None
+
+    # We use return_type="box" to get the coordinates
+    crop_box = st_cropper(
+         image_obj, 
+         realtime_update=True, 
+         box_color='#00FF00' if key_prefix == 'bg' else '#FF0000', 
+         key=f"{key_prefix}_cropper_widget",
+         return_type="box",
+         default_coords=st.session_state[box_key]
+    )
+    
+    if st.button("Save Crop", use_container_width=True):
+         # Save coordinates to session state and trigger rerun to close modal
+         st.session_state[box_key] = crop_box
+         st.rerun()
+
 def main():
     st.set_page_config(page_title="Streamlit Background Remover", layout="wide")
     
@@ -153,31 +179,19 @@ def main():
     if bg_mode == "Custom Image" and bg_image_file is not None:
         raw_bg = Image.open(bg_image_file).convert('RGB')
         
-        # Initialize session state for background crop box
-        if 'bg_crop_box' not in st.session_state:
-            # Default to full image if possible, or let cropper decide initially
-            st.session_state.bg_crop_box = None
-            
-        with st.sidebar.expander("Crop Background", expanded=False):
-            # We use return_type="box" to get the coordinates, and then manually crop
-            bg_crop_box = st_cropper(
-                raw_bg, 
-                realtime_update=True, 
-                box_color='#00FF00', 
-                key="bg_cropper",
-                return_type="box",
-                default_coords=st.session_state.bg_crop_box
-            )
-            # Update session state with the new box
-            st.session_state.bg_crop_box = bg_crop_box
-            
-            # Manually crop the image
-            if bg_crop_box:
-                left, top, width, height = (bg_crop_box['left'], bg_crop_box['top'], bg_crop_box['width'], bg_crop_box['height'])
-                bg_image = raw_bg.crop((left, top, left + width, top + height))
-            else:
-                # Fallback if no box is returned yet
-                bg_image = raw_bg
+        # Determine if we have a saved crop box
+        bg_box = st.session_state.get('bg_crop_box')
+        
+        if st.sidebar.button("Crop Background Image"):
+             crop_image_modal(raw_bg, "bg")
+             
+        # Manually crop the image if coordinates exist
+        if bg_box:
+             left, top, width, height = (bg_box['left'], bg_box['top'], bg_box['width'], bg_box['height'])
+             bg_image = raw_bg.crop((left, top, left + width, top + height))
+        else:
+             # Fallback if no box is returned yet
+             bg_image = raw_bg
 
     # Main Area
     uploaded_file = st.file_uploader("Upload Foreground Image", type=["png", "jpg", "jpeg"])
@@ -185,26 +199,17 @@ def main():
     if uploaded_file is not None:
         raw_image = Image.open(uploaded_file).convert('RGB')
         
-        # Initialize session state for foreground crop box
-        if 'fg_crop_box' not in st.session_state:
-            st.session_state.fg_crop_box = None
+        # Determine if we have a saved crop box
+        fg_box = st.session_state.get('fg_crop_box')
 
-        with st.expander("Crop Foreground", expanded=False):
-            fg_crop_box = st_cropper(
-                raw_image, 
-                realtime_update=True, 
-                box_color='#FF0000', 
-                key="fg_cropper",
-                return_type="box",
-                default_coords=st.session_state.fg_crop_box
-            )
-            st.session_state.fg_crop_box = fg_crop_box
-            
-            if fg_crop_box:
-                left, top, width, height = (fg_crop_box['left'], fg_crop_box['top'], fg_crop_box['width'], fg_crop_box['height'])
-                image = raw_image.crop((left, top, left + width, top + height))
-            else:
-                image = raw_image
+        if st.button("Crop Foreground Image"):
+             crop_image_modal(raw_image, "fg")
+             
+        if fg_box:
+             left, top, width, height = (fg_box['left'], fg_box['top'], fg_box['width'], fg_box['height'])
+             image = raw_image.crop((left, top, left + width, top + height))
+        else:
+             image = raw_image
 
         st.sidebar.header("Foreground Adjustments")
         fg_scale = st.sidebar.slider("Foreground Scale", min_value=0.1, max_value=5.0, value=1.0, step=0.1)
