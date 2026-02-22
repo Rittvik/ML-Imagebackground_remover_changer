@@ -251,16 +251,19 @@ def main():
         else:
              image = raw_image
 
-        st.sidebar.header("Foreground Adjustments")
-        fg_scale = st.sidebar.slider("Foreground Scale", min_value=0.1, max_value=5.0, value=1.0, step=0.1)
-        fg_x_offset = st.sidebar.slider("X Offset", min_value=-2000, max_value=2000, value=0, step=10)
-        fg_y_offset = st.sidebar.slider("Y Offset", min_value=-2000, max_value=2000, value=0, step=10)
+        st.subheader("Foreground Adjustments")
+        ctrl1, ctrl2, ctrl3 = st.columns(3)
+        with ctrl1:
+            fg_scale = st.number_input("Foreground Scale", min_value=0.1, max_value=5.0, value=1.0, step=0.1)
+        with ctrl2:
+            fg_x_offset = st.number_input("X Offset", min_value=-2000, max_value=2000, value=0, step=10)
+        with ctrl3:
+            fg_y_offset = st.number_input("Y Offset", min_value=-2000, max_value=2000, value=0, step=10)
 
-        # Columns for side-by-side view
-        col1, col2 = st.columns(2)
+        # Tabs for layout to save vertical space on mobile
+        tab1, tab2 = st.tabs(["Result View", "Original View"])
         
-        with col1:
-            st.subheader("Original (Cropped)")
+        with tab2:
             st.image(image, use_column_width=True)
 
         # Process
@@ -279,8 +282,7 @@ def main():
                         y_offset=fg_y_offset
                     )
                     
-                    with col2:
-                        st.subheader("Result")
+                    with tab1:
                         st.image(result, use_column_width=True)
                         
                         # Download button
